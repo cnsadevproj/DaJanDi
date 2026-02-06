@@ -122,7 +122,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         {/* 로고/타이틀 */}
         <div className="text-center mb-8">
           <div className="text-6xl mb-4">🍪</div>
-          <h1 className="text-3xl font-bold text-amber-800">다했니?</h1>
+          <h1 className="text-3xl font-bold text-amber-800">다잔디 <span className="text-lg font-normal text-amber-600">DaJanDi</span></h1>
           <p className="text-amber-600 mt-2">학습루틴 게임화 시스템</p>
         </div>
 
@@ -307,7 +307,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
         {/* 푸터 */}
         <p className="text-center text-amber-700 text-sm mt-6">
-          © 2025 다했니? - 학습루틴 게임화 시스템 by CNSA 신도경T
+          © 2025 DaJanDi - 학습루틴 게임화 시스템 by CNSA 신도경T
         </p>
       </div>
     </div>
