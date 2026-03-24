@@ -1,116 +1,119 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 교사 데이터
+
+    function isTeacher(teacherId) {
+      return request.auth != null && request.auth.uid == teacherId;
+    }
+
+    function isValidSize() {
+      return request.resource.data.keys().size() < 50;
+    }
+
+    function isValidString(field, maxLen) {
+      return request.resource.data[field] is string
+          && request.resource.data[field].size() <= maxLen;
+    }
+
     match /teachers/{teacherId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == teacherId;
+      allow write: if isTeacher(teacherId);
 
-      // 학급 데이터
       match /classes/{classId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == teacherId;
+        allow write: if isTeacher(teacherId);
 
-        // 잔디 데이터
         match /grass/{date} {
           allow read: if true;
-          allow write: if request.auth != null && request.auth.uid == teacherId;
+          allow write: if isTeacher(teacherId);
         }
 
-        // 팀 데이터
         match /teams/{teamId} {
           allow read: if true;
-          allow write: if request.auth != null && request.auth.uid == teacherId;
+          allow write: if isTeacher(teacherId);
         }
 
-        // 쿠키샵 아이템
         match /cookieShopItems/{itemId} {
           allow read: if true;
-          allow write: if request.auth != null && request.auth.uid == teacherId;
+          allow write: if isTeacher(teacherId);
         }
 
-        // 쿠키샵 구매 요청
         match /cookieShopRequests/{requestId} {
           allow read: if true;
-          allow write: if true;
+          allow write: if isValidSize()
+                       && request.resource.data.keys().hasAll(['itemId', 'studentCode', 'status'])
+                       && request.resource.data.status in ['pending', 'approved', 'rejected'];
         }
 
-        // 배틀 데이터
         match /battles/{battleId} {
           allow read: if true;
-          allow write: if request.auth != null && request.auth.uid == teacherId;
+          allow write: if isTeacher(teacherId);
         }
 
-        // 워드클라우드 세션
         match /wordclouds/{sessionId} {
           allow read: if true;
-          allow write: if request.auth != null && request.auth.uid == teacherId;
+          allow write: if isTeacher(teacherId);
 
-          // 워드클라우드 응답 (학생도 작성 가능)
           match /responses/{studentCode} {
             allow read: if true;
-            allow write: if true;
+            allow write: if isValidSize()
+                         && request.resource.data.keys().size() <= 10;
           }
         }
       }
 
-      // 학생 데이터 (학생도 자신의 데이터 수정 가능 - 구매, 프로필 등)
       match /students/{studentCode} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize();
       }
 
-      // 상점 아이템 (교사별)
       match /shop/{itemId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == teacherId;
+        allow write: if isTeacher(teacherId);
       }
 
-      // 팀 데이터 (레거시)
       match /teams/{teamId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == teacherId;
+        allow write: if isTeacher(teacherId);
       }
 
-      // 소원 데이터 (학생도 작성 가능)
       match /wishes/{wishId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize()
+                     && request.resource.data.keys().size() <= 15;
       }
 
-      // 쿠키 상점 아이템 (전체 클래스 공유)
       match /cookieShopItems/{itemId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == teacherId;
+        allow write: if isTeacher(teacherId);
       }
 
-      // 쿠키 상점 구매 요청 (전체 클래스 공유)
       match /cookieShopRequests/{requestId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize()
+                     && request.resource.data.keys().hasAll(['itemId', 'studentCode', 'status'])
+                     && request.resource.data.status in ['pending', 'approved', 'rejected'];
       }
 
-      // 상점 물품 요청 (학생 → 교사)
       match /itemSuggestions/{suggestionId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize()
+                     && request.resource.data.keys().size() <= 10;
       }
 
-      // 학급 그룹 (소원 공유용 - 학생도 읽기 가능)
       match /classGroups/{groupId} {
         allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == teacherId;
+        allow write: if isTeacher(teacherId);
       }
     }
 
-    // 게임 데이터 (학생도 참여 가능)
     match /games/{gameId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isValidSize();
 
       match /players/{playerId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize();
       }
 
       match /rounds/{roundId} {
@@ -118,35 +121,78 @@ service cloud.firestore {
         allow write: if request.auth != null;
       }
 
-      // 팀 쿠키 배틀 - 팀 데이터 (학생도 배팅 제출 가능)
       match /teams/{teamId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize();
       }
 
-      // 팀 쿠키 배틀 - 학생 정보
       match /studentInfo/{studentCode} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize();
       }
 
-      // 끝말잇기 - 단어 히스토리 (학생도 제출 가능)
       match /history/{docId} {
         allow read: if true;
-        allow write: if true;
+        allow write: if isValidSize();
       }
     }
 
-    // 상점 아이템 (공개 - 레거시)
     match /shop/{itemId} {
       allow read: if true;
       allow write: if request.auth != null;
     }
 
-    // 시스템 로그
     match /system/{document=**} {
       allow read: if request.auth != null;
       allow write: if false;
+    }
+
+    match /feedback/{feedbackId} {
+      allow read: if true;
+      allow create: if isValidSize()
+                    && request.resource.data.keys().hasAll(['type', 'title', 'description'])
+                    && request.resource.data.type in ['bug', 'feature'];
+      allow update, delete: if false;
+    }
+
+    match /bp_system/{docId} {
+      allow read: if true;
+      allow write: if isValidSize();
+    }
+
+    match /bp_rooms/{roomCode} {
+      allow read: if true;
+      allow write: if isValidSize();
+    }
+
+    match /bp_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if isValidSize();
+
+      match /players/{playerId} {
+        allow read: if true;
+        allow write: if isValidSize();
+      }
+
+      match /matches/{matchId} {
+        allow read: if true;
+        allow write: if isValidSize();
+      }
+    }
+
+    match /spectrum_battle/{roomCode} {
+      allow read: if true;
+      allow write: if isValidSize();
+
+      match /players/{playerId} {
+        allow read: if true;
+        allow write: if isValidSize();
+      }
+
+      match /matches/{matchId} {
+        allow read: if true;
+        allow write: if isValidSize();
+      }
     }
   }
 }

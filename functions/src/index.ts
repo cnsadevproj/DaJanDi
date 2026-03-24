@@ -12,9 +12,17 @@ import { Request, Response } from 'firebase-functions/v1';
 import { EventContext } from 'firebase-functions';
 import { QueryDocumentSnapshot } from 'firebase-functions/v1/firestore';
 
-// Firebase Admin 초기화
 admin.initializeApp();
 const db = admin.firestore();
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 // 다했니 API에서 학생 쿠키 정보 가져오기
 async function fetchStudentFromDahandin(
@@ -51,37 +59,29 @@ async function fetchStudentFromDahandin(
   }
 }
 
-// 한국 시간 기준 요일 반환 (0=일, 1=월, ..., 6=토)
-function getKoreanDayOfWeek(date: Date): number {
-  const koreaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  return koreaTime.getDay();
+function getKoreaDate(): Date {
+  const utcMs = Date.now();
+  return new Date(utcMs + 9 * 60 * 60 * 1000);
 }
 
-// 잔디 기록 추가 (주말은 금요일로 반영, 한국 시간 기준)
 async function addGrassRecord(
   teacherId: string,
   classId: string,
   studentCode: string,
   cookieChange: number
 ): Promise<void> {
-  const now = new Date();
-  const dayOfWeek = getKoreanDayOfWeek(now); // 한국 시간 기준 요일
+  const koreaTime = getKoreaDate();
+  const dayOfWeek = koreaTime.getUTCDay();
 
-  // 한국 시간 기준으로 날짜 계산
-  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-
-  // 주말이면 금요일로 조정
-  let targetDate = new Date(koreaTime);
-  if (dayOfWeek === 0) { // 일요일 -> 금요일 (-2일)
-    targetDate.setDate(targetDate.getDate() - 2);
-  } else if (dayOfWeek === 6) { // 토요일 -> 금요일 (-1일)
-    targetDate.setDate(targetDate.getDate() - 1);
+  if (dayOfWeek === 0) {
+    koreaTime.setUTCDate(koreaTime.getUTCDate() - 2);
+  } else if (dayOfWeek === 6) {
+    koreaTime.setUTCDate(koreaTime.getUTCDate() - 1);
   }
 
-  // 한국 시간 기준 날짜 문자열 생성
-  const year = targetDate.getFullYear();
-  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const day = String(targetDate.getDate()).padStart(2, '0');
+  const year = koreaTime.getUTCFullYear();
+  const month = String(koreaTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(koreaTime.getUTCDate()).padStart(2, '0');
   const dateStr = `${year}-${month}-${day}`;
   const grassRef = db
     .collection('teachers')
@@ -105,7 +105,7 @@ async function addGrassRecord(
     });
   } else {
     await grassRef.set({
-      date: targetDate,  // 한국 시간 기준 날짜
+      date: new Date(),
       records: {
         [studentCode]: { change: cookieChange, count: 1 }
       }
@@ -275,13 +275,29 @@ export const scheduledCookieRefresh = functions
  * 사용법: https://<region>-<project-id>.cloudfunctions.net/manualCookieRefresh?teacherId=xxx
  */
 export const manualCookieRefresh = functions.https.onRequest(async (req: Request, res: Response) => {
-  // CORS 헤더
-  res.set('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
 
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
     return;
   }
 
@@ -412,8 +428,8 @@ function generateEmailHtml(
       rowsHtml += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd;">${req.studentNumber}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${req.studentName}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${req.itemName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(req.studentName)}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(req.itemName)}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${req.quantity}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">🍪 ${req.totalPrice}</td>
         </tr>
@@ -599,12 +615,29 @@ export const scheduledCookieShopEmail = functions
  * 사용법: https://<region>-<project-id>.cloudfunctions.net/manualCookieShopEmail?teacherId=xxx
  */
 export const manualCookieShopEmail = functions.https.onRequest(async (req: Request, res: Response) => {
-  res.set('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
 
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
     return;
   }
 
@@ -714,15 +747,15 @@ export const onFeedbackCreated = functions.firestore
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold; width: 100px;">제출자</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee;">${feedback.userName || '익명'} (${userTypeLabel})</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">${escapeHtml(feedback.userName || '익명')} (${userTypeLabel})</td>
           </tr>
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold;">제목</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee;">${feedback.title}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">${escapeHtml(feedback.title)}</td>
           </tr>
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold; vertical-align: top;">내용</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap;">${feedback.description}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap;">${escapeHtml(feedback.description)}</td>
           </tr>
           <tr>
             <td style="padding: 12px; font-weight: bold;">제출 시간</td>
@@ -863,4 +896,222 @@ export const loginStudent = functions
         '로그인 처리 중 오류가 발생했습니다.'
       );
     }
+  });
+
+export const migrateWeekendGrass = functions.https.onRequest(async (req: Request, res: Response) => {
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
+    return;
+  }
+
+  let movedDocs = 0;
+  let mergedRecords = 0;
+
+  const teachersSnap = await db.collection('teachers').get();
+
+  for (const teacherDoc of teachersSnap.docs) {
+    const classesSnap = await teacherDoc.ref.collection('classes').get();
+
+    for (const classDoc of classesSnap.docs) {
+      const grassSnap = await classDoc.ref.collection('grass').get();
+
+      for (const grassDoc of grassSnap.docs) {
+        const dateStr = grassDoc.id;
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) continue;
+
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1;
+        const day = parseInt(parts[2]);
+        const date = new Date(year, month, day);
+        const dow = date.getDay();
+
+        if (dow !== 0 && dow !== 6) continue;
+
+        const fridayDate = new Date(date);
+        if (dow === 6) fridayDate.setDate(fridayDate.getDate() - 1);
+        if (dow === 0) fridayDate.setDate(fridayDate.getDate() - 2);
+
+        const fy = fridayDate.getFullYear();
+        const fm = String(fridayDate.getMonth() + 1).padStart(2, '0');
+        const fd = String(fridayDate.getDate()).padStart(2, '0');
+        const fridayStr = `${fy}-${fm}-${fd}`;
+
+        const weekendRecords = grassDoc.data().records || {};
+        const fridayRef = classDoc.ref.collection('grass').doc(fridayStr);
+        const fridaySnap = await fridayRef.get();
+
+        if (fridaySnap.exists) {
+          const existingRecords = fridaySnap.data()?.records || {};
+          for (const [code, wData] of Object.entries(weekendRecords)) {
+            const w = wData as { change: number; count: number };
+            const existing = existingRecords[code] as { change: number; count: number } | undefined;
+            if (existing) {
+              existingRecords[code] = {
+                change: existing.change + w.change,
+                count: existing.count + w.count
+              };
+            } else {
+              existingRecords[code] = w;
+            }
+            mergedRecords++;
+          }
+          await fridayRef.update({ records: existingRecords });
+        } else {
+          await fridayRef.set({
+            date: fridayDate,
+            records: weekendRecords
+          });
+          mergedRecords += Object.keys(weekendRecords).length;
+        }
+
+        await grassDoc.ref.delete();
+        movedDocs++;
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Migrated ${movedDocs} weekend docs, ${mergedRecords} student records moved to Fridays`
+  });
+});
+
+export const cleanupStaleData = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .https.onRequest(async (req: Request, res: Response) => {
+    const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+    const origin = req.headers.origin || '';
+    if (allowedOrigins.includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+    }
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'POST');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.status(204).send('');
+      return;
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authorization required' });
+      return;
+    }
+    try {
+      await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+    } catch {
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const dryRun = req.query.execute !== 'true';
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const cutoffDateStr = `${thirtyDaysAgo.getFullYear()}-${String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyDaysAgo.getDate()).padStart(2, '0')}`;
+
+    const report: {
+      staleClasses: Array<{ teacherName: string; teacherId: string; className: string; classId: string; students: number; lastRefresh: string | null; reason: string }>;
+      orphanStudents: Array<{ teacherId: string; studentCode: string; classId: string; reason: string }>;
+      emptyTeachers: Array<{ teacherName: string; teacherId: string; classes: number; students: number }>;
+      deletedClasses: number;
+      deletedStudents: number;
+    } = {
+      staleClasses: [],
+      orphanStudents: [],
+      emptyTeachers: [],
+      deletedClasses: 0,
+      deletedStudents: 0
+    };
+
+    const teachersSnap = await db.collection('teachers').get();
+
+    for (const teacherDoc of teachersSnap.docs) {
+      const teacherData = teacherDoc.data();
+      const teacherName = teacherData.name || teacherData.displayName || teacherDoc.id;
+      const teacherId = teacherDoc.id;
+
+      const classesSnap = await teacherDoc.ref.collection('classes').get();
+      const studentsSnap = await teacherDoc.ref.collection('students').get();
+      const classIds = new Set(classesSnap.docs.map(d => d.id));
+
+      for (const studentDoc of studentsSnap.docs) {
+        const sData = studentDoc.data();
+        if (!sData.classId) {
+          report.orphanStudents.push({ teacherId, studentCode: studentDoc.id, classId: 'none', reason: 'no classId field' });
+          if (!dryRun) { await studentDoc.ref.delete(); report.deletedStudents++; }
+        } else if (!classIds.has(sData.classId)) {
+          report.orphanStudents.push({ teacherId, studentCode: studentDoc.id, classId: sData.classId, reason: 'references nonexistent class' });
+          if (!dryRun) { await studentDoc.ref.delete(); report.deletedStudents++; }
+        }
+      }
+
+      for (const classDoc of classesSnap.docs) {
+        const cData = classDoc.data();
+        const className = cData.name || classDoc.id;
+        const lastRefresh = cData.lastCookieRefresh?.toDate?.() || null;
+        const lastRefreshStr = lastRefresh ? lastRefresh.toISOString().slice(0, 10) : null;
+
+        const classStudents = studentsSnap.docs.filter(s => s.data().classId === classDoc.id);
+        const studentCount = classStudents.length;
+
+        const grassSnap = await classDoc.ref.collection('grass').get();
+        const hasRecentGrass = grassSnap.docs.some(g => g.id >= cutoffDateStr);
+
+        let reason = '';
+        if (studentCount === 0 && !hasRecentGrass) {
+          reason = 'empty class, no recent activity';
+        } else if (lastRefresh && lastRefresh < thirtyDaysAgo && !hasRecentGrass && studentCount === 0) {
+          reason = 'stale refresh, no students, no activity';
+        }
+
+        if (reason) {
+          report.staleClasses.push({ teacherName, teacherId, className, classId: classDoc.id, students: studentCount, lastRefresh: lastRefreshStr, reason });
+          if (!dryRun) {
+            const subCollections = ['grass', 'teams', 'cookieShopItems', 'cookieShopRequests', 'battles', 'wordclouds'];
+            for (const sub of subCollections) {
+              const subSnap = await classDoc.ref.collection(sub).get();
+              for (const subDoc of subSnap.docs) { await subDoc.ref.delete(); }
+            }
+            await classDoc.ref.delete();
+            report.deletedClasses++;
+          }
+        }
+      }
+
+      if (studentsSnap.size === 0 && classesSnap.size === 0) {
+        report.emptyTeachers.push({ teacherName, teacherId, classes: 0, students: 0 });
+      }
+    }
+
+    res.json({
+      dryRun,
+      cutoffDate: cutoffDateStr,
+      summary: {
+        staleClasses: report.staleClasses.length,
+        orphanStudents: report.orphanStudents.length,
+        emptyTeachers: report.emptyTeachers.length,
+        ...(dryRun ? {} : { deletedClasses: report.deletedClasses, deletedStudents: report.deletedStudents })
+      },
+      details: report
+    });
   });
