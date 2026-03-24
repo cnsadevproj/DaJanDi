@@ -897,3 +897,103 @@ export const loginStudent = functions
       );
     }
   });
+
+export const migrateWeekendGrass = functions.https.onRequest(async (req: Request, res: Response) => {
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
+    return;
+  }
+
+  let movedDocs = 0;
+  let mergedRecords = 0;
+
+  const teachersSnap = await db.collection('teachers').get();
+
+  for (const teacherDoc of teachersSnap.docs) {
+    const classesSnap = await teacherDoc.ref.collection('classes').get();
+
+    for (const classDoc of classesSnap.docs) {
+      const grassSnap = await classDoc.ref.collection('grass').get();
+
+      for (const grassDoc of grassSnap.docs) {
+        const dateStr = grassDoc.id;
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) continue;
+
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1;
+        const day = parseInt(parts[2]);
+        const date = new Date(year, month, day);
+        const dow = date.getDay();
+
+        if (dow !== 0 && dow !== 6) continue;
+
+        const fridayDate = new Date(date);
+        if (dow === 6) fridayDate.setDate(fridayDate.getDate() - 1);
+        if (dow === 0) fridayDate.setDate(fridayDate.getDate() - 2);
+
+        const fy = fridayDate.getFullYear();
+        const fm = String(fridayDate.getMonth() + 1).padStart(2, '0');
+        const fd = String(fridayDate.getDate()).padStart(2, '0');
+        const fridayStr = `${fy}-${fm}-${fd}`;
+
+        const weekendRecords = grassDoc.data().records || {};
+        const fridayRef = classDoc.ref.collection('grass').doc(fridayStr);
+        const fridaySnap = await fridayRef.get();
+
+        if (fridaySnap.exists) {
+          const existingRecords = fridaySnap.data()?.records || {};
+          for (const [code, wData] of Object.entries(weekendRecords)) {
+            const w = wData as { change: number; count: number };
+            const existing = existingRecords[code] as { change: number; count: number } | undefined;
+            if (existing) {
+              existingRecords[code] = {
+                change: existing.change + w.change,
+                count: existing.count + w.count
+              };
+            } else {
+              existingRecords[code] = w;
+            }
+            mergedRecords++;
+          }
+          await fridayRef.update({ records: existingRecords });
+        } else {
+          await fridayRef.set({
+            date: fridayDate,
+            records: weekendRecords
+          });
+          mergedRecords += Object.keys(weekendRecords).length;
+        }
+
+        await grassDoc.ref.delete();
+        movedDocs++;
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Migrated ${movedDocs} weekend docs, ${mergedRecords} student records moved to Fridays`
+  });
+});
