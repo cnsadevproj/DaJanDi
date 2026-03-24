@@ -12,9 +12,17 @@ import { Request, Response } from 'firebase-functions/v1';
 import { EventContext } from 'firebase-functions';
 import { QueryDocumentSnapshot } from 'firebase-functions/v1/firestore';
 
-// Firebase Admin 초기화
 admin.initializeApp();
 const db = admin.firestore();
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 // 다했니 API에서 학생 쿠키 정보 가져오기
 async function fetchStudentFromDahandin(
@@ -275,13 +283,29 @@ export const scheduledCookieRefresh = functions
  * 사용법: https://<region>-<project-id>.cloudfunctions.net/manualCookieRefresh?teacherId=xxx
  */
 export const manualCookieRefresh = functions.https.onRequest(async (req: Request, res: Response) => {
-  // CORS 헤더
-  res.set('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
 
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
     return;
   }
 
@@ -412,8 +436,8 @@ function generateEmailHtml(
       rowsHtml += `
         <tr>
           <td style="padding: 8px; border: 1px solid #ddd;">${req.studentNumber}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${req.studentName}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${req.itemName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(req.studentName)}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(req.itemName)}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${req.quantity}</td>
           <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">🍪 ${req.totalPrice}</td>
         </tr>
@@ -599,12 +623,29 @@ export const scheduledCookieShopEmail = functions
  * 사용법: https://<region>-<project-id>.cloudfunctions.net/manualCookieShopEmail?teacherId=xxx
  */
 export const manualCookieShopEmail = functions.https.onRequest(async (req: Request, res: Response) => {
-  res.set('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+  const origin = req.headers.origin || '';
+  if (allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
 
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(204).send('');
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
     return;
   }
 
@@ -714,15 +755,15 @@ export const onFeedbackCreated = functions.firestore
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold; width: 100px;">제출자</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee;">${feedback.userName || '익명'} (${userTypeLabel})</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">${escapeHtml(feedback.userName || '익명')} (${userTypeLabel})</td>
           </tr>
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold;">제목</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee;">${feedback.title}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">${escapeHtml(feedback.title)}</td>
           </tr>
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #eee; font-weight: bold; vertical-align: top;">내용</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap;">${feedback.description}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap;">${escapeHtml(feedback.description)}</td>
           </tr>
           <tr>
             <td style="padding: 12px; font-weight: bold;">제출 시간</td>
