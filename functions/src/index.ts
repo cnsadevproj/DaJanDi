@@ -59,37 +59,29 @@ async function fetchStudentFromDahandin(
   }
 }
 
-// 한국 시간 기준 요일 반환 (0=일, 1=월, ..., 6=토)
-function getKoreanDayOfWeek(date: Date): number {
-  const koreaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  return koreaTime.getDay();
+function getKoreaDate(): Date {
+  const utcMs = Date.now();
+  return new Date(utcMs + 9 * 60 * 60 * 1000);
 }
 
-// 잔디 기록 추가 (주말은 금요일로 반영, 한국 시간 기준)
 async function addGrassRecord(
   teacherId: string,
   classId: string,
   studentCode: string,
   cookieChange: number
 ): Promise<void> {
-  const now = new Date();
-  const dayOfWeek = getKoreanDayOfWeek(now); // 한국 시간 기준 요일
+  const koreaTime = getKoreaDate();
+  const dayOfWeek = koreaTime.getUTCDay();
 
-  // 한국 시간 기준으로 날짜 계산
-  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-
-  // 주말이면 금요일로 조정
-  let targetDate = new Date(koreaTime);
-  if (dayOfWeek === 0) { // 일요일 -> 금요일 (-2일)
-    targetDate.setDate(targetDate.getDate() - 2);
-  } else if (dayOfWeek === 6) { // 토요일 -> 금요일 (-1일)
-    targetDate.setDate(targetDate.getDate() - 1);
+  if (dayOfWeek === 0) {
+    koreaTime.setUTCDate(koreaTime.getUTCDate() - 2);
+  } else if (dayOfWeek === 6) {
+    koreaTime.setUTCDate(koreaTime.getUTCDate() - 1);
   }
 
-  // 한국 시간 기준 날짜 문자열 생성
-  const year = targetDate.getFullYear();
-  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const day = String(targetDate.getDate()).padStart(2, '0');
+  const year = koreaTime.getUTCFullYear();
+  const month = String(koreaTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(koreaTime.getUTCDate()).padStart(2, '0');
   const dateStr = `${year}-${month}-${day}`;
   const grassRef = db
     .collection('teachers')
@@ -113,7 +105,7 @@ async function addGrassRecord(
     });
   } else {
     await grassRef.set({
-      date: targetDate,  // 한국 시간 기준 날짜
+      date: new Date(),
       records: {
         [studentCode]: { change: cookieChange, count: 1 }
       }

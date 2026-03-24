@@ -1088,25 +1088,27 @@ function getKoreanDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// 잔디 기록 추가 (주말은 금요일로 반영)
+// 잔디 기록 추가 (주말은 금요일로 반영, 한국 시간 기준)
 export async function addGrassRecord(
   teacherId: string,
   classId: string,
   studentCode: string,
   cookieChange: number
 ): Promise<void> {
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=일, 1=월, ..., 5=금, 6=토
+  const now = new Date();
+  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const dayOfWeek = koreaTime.getDay();
 
-  // 주말이면 금요일로 조정
-  let targetDate = new Date(today);
-  if (dayOfWeek === 0) { // 일요일 -> 금요일 (-2일)
-    targetDate.setDate(targetDate.getDate() - 2);
-  } else if (dayOfWeek === 6) { // 토요일 -> 금요일 (-1일)
-    targetDate.setDate(targetDate.getDate() - 1);
+  if (dayOfWeek === 0) {
+    koreaTime.setDate(koreaTime.getDate() - 2);
+  } else if (dayOfWeek === 6) {
+    koreaTime.setDate(koreaTime.getDate() - 1);
   }
 
-  const dateStr = getKoreanDateString(targetDate);
+  const year = koreaTime.getFullYear();
+  const month = String(koreaTime.getMonth() + 1).padStart(2, '0');
+  const day = String(koreaTime.getDate()).padStart(2, '0');
+  const dateStr = `${year}-${month}-${day}`;
   const grassRef = doc(db, 'teachers', teacherId, 'classes', classId, 'grass', dateStr);
   
   const grassSnap = await getDoc(grassRef);
@@ -1123,11 +1125,11 @@ export async function addGrassRecord(
     });
   } else {
     await setDoc(grassRef, {
-      date: today,
+      date: new Date(koreaTime),
       records: {
         [studentCode]: { change: cookieChange, count: 1 }
       }
-    }, { merge: true });  // merge 옵션으로 기존 데이터 보존
+    }, { merge: true });
   }
 }
 
