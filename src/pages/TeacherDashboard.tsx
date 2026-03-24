@@ -6155,7 +6155,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                     <div>
                       <label className="text-sm font-medium text-gray-500">다했니 API 키</label>
                       <p className="font-mono text-xs bg-gray-100 p-2 rounded">
-                        {teacher?.dahandinApiKey ? '••••••••' + teacher.dahandinApiKey.slice(-8) : '-'}
+                        {teacher?.dahandinApiKey ? '••••••••••••••••' : '-'}
                       </p>
                     </div>
                   </>
