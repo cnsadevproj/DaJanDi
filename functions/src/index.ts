@@ -997,3 +997,121 @@ export const migrateWeekendGrass = functions.https.onRequest(async (req: Request
     message: `Migrated ${movedDocs} weekend docs, ${mergedRecords} student records moved to Fridays`
   });
 });
+
+export const cleanupStaleData = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .https.onRequest(async (req: Request, res: Response) => {
+    const allowedOrigins = ['https://dajandi.cnsatools.com', 'https://dahatni-dbe19.web.app', 'http://localhost:5173'];
+    const origin = req.headers.origin || '';
+    if (allowedOrigins.includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+    }
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'POST');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.status(204).send('');
+      return;
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authorization required' });
+      return;
+    }
+    try {
+      await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
+    } catch {
+      res.status(403).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const dryRun = req.query.execute !== 'true';
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const cutoffDateStr = `${thirtyDaysAgo.getFullYear()}-${String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyDaysAgo.getDate()).padStart(2, '0')}`;
+
+    const report: {
+      staleClasses: Array<{ teacherName: string; teacherId: string; className: string; classId: string; students: number; lastRefresh: string | null; reason: string }>;
+      orphanStudents: Array<{ teacherId: string; studentCode: string; classId: string; reason: string }>;
+      emptyTeachers: Array<{ teacherName: string; teacherId: string; classes: number; students: number }>;
+      deletedClasses: number;
+      deletedStudents: number;
+    } = {
+      staleClasses: [],
+      orphanStudents: [],
+      emptyTeachers: [],
+      deletedClasses: 0,
+      deletedStudents: 0
+    };
+
+    const teachersSnap = await db.collection('teachers').get();
+
+    for (const teacherDoc of teachersSnap.docs) {
+      const teacherData = teacherDoc.data();
+      const teacherName = teacherData.name || teacherData.displayName || teacherDoc.id;
+      const teacherId = teacherDoc.id;
+
+      const classesSnap = await teacherDoc.ref.collection('classes').get();
+      const studentsSnap = await teacherDoc.ref.collection('students').get();
+      const classIds = new Set(classesSnap.docs.map(d => d.id));
+
+      for (const studentDoc of studentsSnap.docs) {
+        const sData = studentDoc.data();
+        if (!sData.classId) {
+          report.orphanStudents.push({ teacherId, studentCode: studentDoc.id, classId: 'none', reason: 'no classId field' });
+          if (!dryRun) { await studentDoc.ref.delete(); report.deletedStudents++; }
+        } else if (!classIds.has(sData.classId)) {
+          report.orphanStudents.push({ teacherId, studentCode: studentDoc.id, classId: sData.classId, reason: 'references nonexistent class' });
+          if (!dryRun) { await studentDoc.ref.delete(); report.deletedStudents++; }
+        }
+      }
+
+      for (const classDoc of classesSnap.docs) {
+        const cData = classDoc.data();
+        const className = cData.name || classDoc.id;
+        const lastRefresh = cData.lastCookieRefresh?.toDate?.() || null;
+        const lastRefreshStr = lastRefresh ? lastRefresh.toISOString().slice(0, 10) : null;
+
+        const classStudents = studentsSnap.docs.filter(s => s.data().classId === classDoc.id);
+        const studentCount = classStudents.length;
+
+        const grassSnap = await classDoc.ref.collection('grass').get();
+        const hasRecentGrass = grassSnap.docs.some(g => g.id >= cutoffDateStr);
+
+        let reason = '';
+        if (studentCount === 0 && !hasRecentGrass) {
+          reason = 'empty class, no recent activity';
+        } else if (lastRefresh && lastRefresh < thirtyDaysAgo && !hasRecentGrass && studentCount === 0) {
+          reason = 'stale refresh, no students, no activity';
+        }
+
+        if (reason) {
+          report.staleClasses.push({ teacherName, teacherId, className, classId: classDoc.id, students: studentCount, lastRefresh: lastRefreshStr, reason });
+          if (!dryRun) {
+            const subCollections = ['grass', 'teams', 'cookieShopItems', 'cookieShopRequests', 'battles', 'wordclouds'];
+            for (const sub of subCollections) {
+              const subSnap = await classDoc.ref.collection(sub).get();
+              for (const subDoc of subSnap.docs) { await subDoc.ref.delete(); }
+            }
+            await classDoc.ref.delete();
+            report.deletedClasses++;
+          }
+        }
+      }
+
+      if (studentsSnap.size === 0 && classesSnap.size === 0) {
+        report.emptyTeachers.push({ teacherName, teacherId, classes: 0, students: 0 });
+      }
+    }
+
+    res.json({
+      dryRun,
+      cutoffDate: cutoffDateStr,
+      summary: {
+        staleClasses: report.staleClasses.length,
+        orphanStudents: report.orphanStudents.length,
+        emptyTeachers: report.emptyTeachers.length,
+        ...(dryRun ? {} : { deletedClasses: report.deletedClasses, deletedStudents: report.deletedStudents })
+      },
+      details: report
+    });
+  });
