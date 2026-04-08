@@ -6,7 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { useAuth } from '../contexts/AuthContext';
 import {
   ShoppingBag,
-  Cookie,
+  Candy,
   Check,
   Lock,
   Sparkles,
@@ -139,13 +139,13 @@ export function Shop({ onBack }: ShopProps) {
     if (!student) return { owned: false, canBuy: false };
 
     const owned = student.ownedItems.includes(item.code);
-    const canBuy = !owned && student.totalCookie >= item.price;
+    const canBuy = !owned && (student.jelly ?? 0) >= item.price;
 
     return { owned, canBuy };
   };
 
-  // 사용 가능 쿠키 (총쿠키 - 사용쿠키)
-  const availableCookies = student ? student.totalCookie - student.usedCookie : 0;
+  // 사용 가능한 캔디 (상점/게임 재화)
+  const availableJelly = student?.jelly ?? 0;
 
   if (isTeacher) {
     return (
@@ -163,22 +163,16 @@ export function Shop({ onBack }: ShopProps) {
   return (
     <PageLayout title="상점" role="student" showBack onBack={onBack}>
       <div className="space-y-4">
-        {/* 쿠키 정보 */}
-        <Card className="bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+        {/* 캔디 정보 */}
+        <Card className="bg-gradient-to-r from-pink-500 to-rose-500 text-white">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                  <Cookie className="w-7 h-7" />
-                </div>
-                <div>
-                  <p className="text-sm text-amber-100">사용 가능한 쿠키</p>
-                  <p className="text-2xl font-bold">{availableCookies}</p>
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                <Candy className="w-7 h-7" />
               </div>
-              <div className="text-right text-sm text-amber-100">
-                <p>총 누적: {student?.totalCookie || 0}</p>
-                <p>사용함: {student?.usedCookie || 0}</p>
+              <div>
+                <p className="text-sm text-pink-100">사용 가능한 캔디</p>
+                <p className="text-2xl font-bold">{availableJelly} 🍭</p>
               </div>
             </div>
           </CardContent>
@@ -426,7 +420,7 @@ export function Shop({ onBack }: ShopProps) {
                             '...'
                           ) : canBuy ? (
                             <>
-                              <Cookie className="w-3 h-3" />
+                              <Candy className="w-3 h-3" />
                               {item.price}
                             </>
                           ) : (
@@ -450,7 +444,7 @@ export function Shop({ onBack }: ShopProps) {
           <CardContent className="pt-4">
             <p className="text-sm text-blue-800">
               <strong>안내:</strong> 구매한 아이템은 마이페이지에서 프로필에 적용할 수 있습니다.
-              쿠키는 다했니를 통해 누적된 총 쿠키로 구매합니다.
+              캔디는 다했니에서 쿠키가 증가할 때마다 자동으로 적립됩니다.
             </p>
           </CardContent>
         </Card>
