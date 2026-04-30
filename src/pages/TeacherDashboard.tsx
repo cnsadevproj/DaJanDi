@@ -424,6 +424,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const [editName, setEditName] = useState('');
   const [editSchoolName, setEditSchoolName] = useState('');
   const [editDahandinApiKey, setEditDahandinApiKey] = useState('');
+  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // 이메일 변경
@@ -583,10 +584,12 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
 
     setIsSavingProfile(true);
     try {
+      // 모든 공백/제어문자/Zero-width 문자 제거 (붙여넣기 시 유입되는 보이지 않는 문자 방지)
+      const cleanApiKey = editDahandinApiKey.replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, "");
       await updateTeacher(user.uid, {
         name: editName.trim(),
         schoolName: editSchoolName.trim(),
-        dahandinApiKey: editDahandinApiKey.trim()
+        dahandinApiKey: cleanApiKey
       });
       toast.success('프로필이 수정되었습니다.');
       setIsEditingProfile(false);
@@ -605,6 +608,36 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     setEditName('');
     setEditSchoolName('');
     setEditDahandinApiKey('');
+  };
+
+  // 다했니 API 키 테스트 (현재 저장된 키로 학급의 첫 학생을 조회)
+  const testDahandinApiKey = async () => {
+    if (!user || !teacher?.dahandinApiKey) {
+      toast.error('저장된 API 키가 없습니다.');
+      return;
+    }
+    setIsTestingApiKey(true);
+    try {
+      let testCode: string | null = null;
+      for (const cls of classes) {
+        const clsStudents = await getClassStudents(user.uid, cls.id);
+        if (clsStudents.length > 0) {
+          testCode = clsStudents[0].code;
+          break;
+        }
+      }
+      if (!testCode) {
+        toast.error('테스트할 학생이 없습니다.');
+        setIsTestingApiKey(false);
+        return;
+      }
+      const result = await fetchStudentFromDahandin(teacher.dahandinApiKey, testCode);
+      toast.success(`✅ API 키 정상! (${testCode}: 쿠키 ${result.cookie}개)`);
+    } catch (error: any) {
+      console.error('API key test failed:', error);
+      toast.error(`❌ API 키 오류: ${error.message || '알 수 없는 오류'}`);
+    }
+    setIsTestingApiKey(false);
   };
 
   // 이메일 변경 시작
@@ -6155,9 +6188,21 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">다했니 API 키</label>
-                      <p className="font-mono text-xs bg-gray-100 p-2 rounded">
-                        {teacher?.dahandinApiKey ? '••••••••••••••••' : '-'}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="font-mono text-xs bg-gray-100 p-2 rounded flex-1">
+                          {teacher?.dahandinApiKey
+                            ? `••••••••••••••••${teacher.dahandinApiKey.slice(-8)} (총 ${teacher.dahandinApiKey.length}자)`
+                            : '-'}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={testDahandinApiKey}
+                          disabled={isTestingApiKey || !teacher?.dahandinApiKey}
+                        >
+                          {isTestingApiKey ? '테스트 중...' : '🔍 키 테스트'}
+                        </Button>
+                      </div>
                     </div>
                   </>
                 )}
