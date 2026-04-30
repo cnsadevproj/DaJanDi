@@ -423,6 +423,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editSchoolName, setEditSchoolName] = useState('');
+  const [editDahandinApiKey, setEditDahandinApiKey] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // 이메일 변경
@@ -567,6 +568,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const startEditingProfile = () => {
     setEditName(teacher?.name || '');
     setEditSchoolName(teacher?.schoolName || '');
+    setEditDahandinApiKey(teacher?.dahandinApiKey || '');
     setIsEditingProfile(true);
   };
 
@@ -583,7 +585,8 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     try {
       await updateTeacher(user.uid, {
         name: editName.trim(),
-        schoolName: editSchoolName.trim()
+        schoolName: editSchoolName.trim(),
+        dahandinApiKey: editDahandinApiKey.trim()
       });
       toast.success('프로필이 수정되었습니다.');
       setIsEditingProfile(false);
@@ -601,6 +604,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     setIsEditingProfile(false);
     setEditName('');
     setEditSchoolName('');
+    setEditDahandinApiKey('');
   };
 
   // 이메일 변경 시작
@@ -6113,6 +6117,18 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                         placeholder="학교 이름을 입력하세요"
                         className="mt-1"
                       />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">다했니 API 키</label>
+                      <Input
+                        type="password"
+                        value={editDahandinApiKey}
+                        onChange={(e) => setEditDahandinApiKey(e.target.value)}
+                        placeholder="다했니 API 키를 입력하세요"
+                        className="mt-1 font-mono text-xs"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">api.dahandin.com에서 발급받은 키를 입력하세요. 비워두지 마세요.</p>
                     </div>
                     <div className="flex gap-2 pt-2">
                       <Button onClick={saveProfile} disabled={isSavingProfile}>
