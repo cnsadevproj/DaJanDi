@@ -17,8 +17,6 @@ import {
   getGrassData,
   getTeacherShopItems,
   purchaseItem,
-  purchaseStreakFreeze,
-  updateActiveStreakFreezes,
   activateTitlePermit,
   activateProfilePhoto,
   saveProfile,
@@ -87,7 +85,7 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
   // 다른 학생들 (프로필 보기용)
   const [classmates, setClassmates] = useState<Student[]>([]);
   const [selectedClassmate, setSelectedClassmate] = useState<Student | null>(null);
-  const [selectedClassmateGrass, setSelectedClassmateGrass] = useState<Array<{ date: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }>>([]);
+  const [selectedClassmateGrass, setSelectedClassmateGrass] = useState<Array<{ date: string; cookieChange: number; count: number }>>([]);
   const [isLoadingClassmateGrass, setIsLoadingClassmateGrass] = useState(false);
 
   // 워드클라우드 모달
@@ -670,7 +668,7 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
 
       // 잔디 데이터 (count 포함 - 같은 날 여러 번 새로고침 시 누적)
       const grass = await getGrassData(studentTeacherId, student.classId, student.code);
-      setGrassData(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1, usedStreakFreeze: g.usedStreakFreeze })));
+      setGrassData(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1 })));
 
       // 팀 정보
       const teams = await getTeams(studentTeacherId, student.classId);
@@ -712,7 +710,7 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
 
       // 잔디 데이터
       const grass = await getGrassData(studentTeacherId, student.classId, student.code);
-      setGrassData(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1, usedStreakFreeze: g.usedStreakFreeze })));
+      setGrassData(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1 })));
 
       // 쿠키 상점 요청
       const requests = await getStudentCookieShopRequests(studentTeacherId, student.code);
@@ -821,24 +819,6 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
       return;
     }
 
-    // 스트릭 프리즈는 별도 함수로 처리 (maxCount 검증 포함)
-    if (item.category === 'custom') {
-      setIsPurchasing(true);
-      try {
-        const result = await purchaseStreakFreeze(studentTeacherId, currentStudent.code, item.price, item.maxCount || 0);
-        if (result.success) {
-          await loadData();
-          toast.success(`${item.name}을(를) 구매했습니다! 🎉`);
-        } else {
-          toast.error(result.message || '구매에 실패했습니다.');
-        }
-      } catch (error: any) {
-        toast.error(error.message || '구매에 실패했습니다.');
-      }
-      setIsPurchasing(false);
-      return;
-    }
-
     if (currentStudent.ownedItems.includes(item.code)) {
       toast.error('이미 보유한 아이템입니다.');
       return;
@@ -881,30 +861,6 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
       toast.success('프로필사진권이 활성화되었습니다! 이제 사진을 업로드할 수 있습니다. 📷');
     } catch (error) {
       toast.error('프로필사진권 활성화에 실패했습니다.');
-    }
-    setIsPurchasing(false);
-  };
-
-  // 스트릭 프리즈 활성화 개수 설정
-  const handleSetActiveStreakFreezes = async (newActive: number) => {
-    if (!studentTeacherId || !currentStudent) return;
-
-    const owned = currentStudent.streakFreezes || 0;
-
-    if (newActive < 0 || newActive > owned) {
-      return;
-    }
-
-    setIsPurchasing(true);
-    try {
-      const result = await updateActiveStreakFreezes(studentTeacherId, currentStudent.code, newActive);
-      if (result.success) {
-        await loadData();
-      } else {
-        toast.error(result.message || '스트릭 프리즈 업데이트에 실패했습니다.');
-      }
-    } catch (error: any) {
-      toast.error(error.message || '스트릭 프리즈 업데이트에 실패했습니다.');
     }
     setIsPurchasing(false);
   };
@@ -1376,7 +1332,7 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
     setIsLoadingClassmateGrass(true);
     try {
       const grass = await getGrassData(studentTeacherId, student.classId, classmate.code);
-      setSelectedClassmateGrass(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1, usedStreakFreeze: g.usedStreakFreeze })));
+      setSelectedClassmateGrass(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1 })));
     } catch (error) {
       console.error('Failed to load classmate grass:', error);
     }
@@ -1384,8 +1340,7 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
   };
 
   // 잔디 색상 (3단계: 1개, 2개, 3개 이상)
-  const getGrassColor = (cookieChange: number, usedStreakFreeze?: boolean) => {
-    if (usedStreakFreeze) return 'bg-sky-400'; // 스트릭 프리즈 사용 (하늘색)
+  const getGrassColor = (cookieChange: number) => {
     if (cookieChange === 0) return 'bg-gray-200'; // 없음
     if (cookieChange === 1) return 'bg-green-300'; // 1개
     if (cookieChange === 2) return 'bg-green-500'; // 2개
@@ -2004,15 +1959,14 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
                             const grassRecord = grassData.find((g) => g.date === dateStr);
                             const cookieChange = grassRecord?.cookieChange || 0;
                             const refreshCount = grassRecord?.count || 0;
-                            const usedStreakFreeze = grassRecord?.usedStreakFreeze || false;
                             const isToday = dateStr === displayTodayStr;
 
                             return (
                               <div
                                 key={dayIndex}
                                 style={{ width: `${CELL_SIZE}px`, height: `${CELL_SIZE}px`, minWidth: `${CELL_SIZE}px`, minHeight: `${CELL_SIZE}px` }}
-                                className={`rounded ${getGrassColor(cookieChange, usedStreakFreeze)} ${isToday ? 'ring-2 ring-blue-400' : ''}`}
-                                title={`${dateStr} (${DAY_NAMES[dayIndex]}): ${usedStreakFreeze ? '❄️ 스트릭 프리즈' : `+${cookieChange}쿠키 (${refreshCount}회 기록)`}`}
+                                className={`rounded ${getGrassColor(cookieChange)} ${isToday ? 'ring-2 ring-blue-400' : ''}`}
+                                title={`${dateStr} (${DAY_NAMES[dayIndex]}): +${cookieChange}쿠키 (${refreshCount}회 기록)`}
                               />
                             );
                           })}
@@ -2761,58 +2715,6 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
                           {selectedBtnFill === item.value && <span className="absolute -top-1 -right-1 text-green-600 text-xs bg-white rounded-full px-1">✓</span>}
                         </button>
                       ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 스트릭 프리즈 관리 */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    ❄️ 스트릭 프리즈
-                    <span className="text-xs text-gray-400 ml-2">
-                      (보유 {currentStudent.streakFreezes || 0}개 / 활성화 {currentStudent.activeStreakFreezes || 0}개)
-                    </span>
-                  </label>
-                  {(currentStudent.streakFreezes || 0) === 0 ? (
-                    <div className="p-4 bg-gray-100 rounded-lg text-center text-gray-500">
-                      <p className="text-2xl mb-2">❄️</p>
-                      <p className="text-sm">보유한 스트릭 프리즈가 없습니다</p>
-                      <p className="text-xs text-gray-400">상점에서 구매해보세요!</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex flex-wrap gap-2">
-                        {Array.from({ length: currentStudent.streakFreezes || 0 }).map((_, i) => {
-                          const isActive = i < (currentStudent.activeStreakFreezes || 0);
-                          return (
-                            <button
-                              key={i}
-                              onClick={() => handleSetActiveStreakFreezes(isActive ? i : i + 1)}
-                              disabled={isPurchasing}
-                              className={`relative w-16 h-16 rounded-lg transition-all shadow-md hover:shadow-lg flex flex-col items-center justify-center ${
-                                isActive
-                                  ? 'bg-gradient-to-br from-blue-400 to-blue-600 ring-2 ring-blue-500 scale-105'
-                                  : 'bg-white border-2 border-gray-300 hover:border-blue-400 hover:scale-105'
-                              } ${isPurchasing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                            >
-                              <span className="text-2xl">{isActive ? '❄️' : '⬜'}</span>
-                              <span className={`text-[10px] mt-1 font-medium ${isActive ? 'text-white' : 'text-gray-400'}`}>
-                                {i + 1}
-                              </span>
-                              {isActive && (
-                                <span className="absolute -top-1 -right-1 text-green-500 text-xs bg-white rounded-full w-5 h-5 flex items-center justify-center shadow">
-                                  ✓
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                        <p className="text-xs text-blue-700 text-center">
-                          💡 클릭하여 활성화/비활성화 • 하루를 건너뛰면 활성화된 프리즈가 자동으로 사용됩니다
-                        </p>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -3685,12 +3587,11 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
 
                               const grassRecord = selectedClassmateGrass.find((g) => g.date === dateStr);
                               const cookieChange = grassRecord?.cookieChange || 0;
-                              const usedStreakFreeze = grassRecord?.usedStreakFreeze || false;
                               return (
                                 <div
                                   key={dayIndex}
-                                  className={`w-3 h-3 rounded-sm ${getGrassColor(cookieChange, usedStreakFreeze)}`}
-                                  title={`${dateStr}: ${usedStreakFreeze ? '❄️ 스트릭 프리즈' : `+${cookieChange}쿠키`}`}
+                                  className={`w-3 h-3 rounded-sm ${getGrassColor(cookieChange)}`}
+                                  title={`${dateStr}: +${cookieChange}쿠키`}
                                 />
                               );
                             })}

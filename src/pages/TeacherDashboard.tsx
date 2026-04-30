@@ -423,6 +423,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editSchoolName, setEditSchoolName] = useState('');
+  const [editDahandinApiKey, setEditDahandinApiKey] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // 이메일 변경
@@ -567,6 +568,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const startEditingProfile = () => {
     setEditName(teacher?.name || '');
     setEditSchoolName(teacher?.schoolName || '');
+    setEditDahandinApiKey(teacher?.dahandinApiKey || '');
     setIsEditingProfile(true);
   };
 
@@ -583,7 +585,8 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     try {
       await updateTeacher(user.uid, {
         name: editName.trim(),
-        schoolName: editSchoolName.trim()
+        schoolName: editSchoolName.trim(),
+        dahandinApiKey: editDahandinApiKey.trim()
       });
       toast.success('프로필이 수정되었습니다.');
       setIsEditingProfile(false);
@@ -601,6 +604,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     setIsEditingProfile(false);
     setEditName('');
     setEditSchoolName('');
+    setEditDahandinApiKey('');
   };
 
   // 이메일 변경 시작
@@ -826,8 +830,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   };
 
   // 잔디 색상
-  const getGrassColor = (cookieChange: number, usedStreakFreeze?: boolean) => {
-    if (usedStreakFreeze) return 'bg-sky-400'; // 스트릭 프리즈 사용 (하늘색)
+  const getGrassColor = (cookieChange: number) => {
     if (cookieChange === 0) return 'bg-gray-200';
     if (cookieChange === 1) return 'bg-green-300';
     if (cookieChange === 2) return 'bg-green-500';
@@ -844,7 +847,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     setIsLoadingProfileGrass(true);
     try {
       const grass = await getGrassData(user.uid, selectedClass, student.code);
-      setProfileStudentGrass(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1, usedStreakFreeze: g.usedStreakFreeze })));
+      setProfileStudentGrass(grass.map(g => ({ date: g.date, cookieChange: g.cookieChange, count: g.count || 1 })));
     } catch (error) {
       console.error('Failed to load profile student grass:', error);
     }
@@ -1019,7 +1022,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // 잔디 데이터
-  const [grassData, setGrassData] = useState<Array<{ date: string; studentCode: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }>>([]);
+  const [grassData, setGrassData] = useState<Array<{ date: string; studentCode: string; cookieChange: number; count: number }>>([]);
   const [isLoadingGrass, setIsLoadingGrass] = useState(false);
   const [isResettingGrass, setIsResettingGrass] = useState(false);
   const [isUploadingPastGrass, setIsUploadingPastGrass] = useState(false);
@@ -1037,7 +1040,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
 
   // 프로필 확인 모달
   const [selectedProfileStudent, setSelectedProfileStudent] = useState<Student | null>(null);
-  const [profileStudentGrass, setProfileStudentGrass] = useState<Array<{ date: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }>>([]);
+  const [profileStudentGrass, setProfileStudentGrass] = useState<Array<{ date: string; cookieChange: number; count: number }>>([]);
   const [isLoadingProfileGrass, setIsLoadingProfileGrass] = useState(false);
 
   // 워드클라우드 모달
@@ -1063,7 +1066,6 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('emoji');
   const [newItemDescription, setNewItemDescription] = useState('');
-  const [newItemMaxCount, setNewItemMaxCount] = useState(''); // 스트릭 프리즈 최대 보유 개수
   const [shopCategoryFilter, setShopCategoryFilter] = useState<string>('all');
 
   // 상점 모드 (캔디/쿠키)
@@ -2324,8 +2326,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   };
 
   // 잔디 색상 (3단계: 1개, 2개, 3개 이상)
-  const getStudentGrassColor = (cookieChange: number, usedStreakFreeze?: boolean) => {
-    if (usedStreakFreeze) return 'bg-sky-400'; // 스트릭 프리즈 사용 (하늘색)
+  const getStudentGrassColor = (cookieChange: number) => {
     if (cookieChange === 0) return 'bg-gray-200'; // 없음
     if (cookieChange === 1) return 'bg-green-300'; // 1개
     if (cookieChange === 2) return 'bg-green-500'; // 2개
@@ -2480,15 +2481,14 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
 
   // 잔디 데이터를 날짜별로 그룹화 (튜토리얼 모드면 더미 데이터 사용)
   const getGrassByDate = () => {
-    const grouped: Record<string, Record<string, { change: number; count: number; usedStreakFreeze?: boolean }>> = {};
-    displayGrassData.forEach((item: { date: string; studentCode: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }) => {
+    const grouped: Record<string, Record<string, { change: number; count: number }>> = {};
+    displayGrassData.forEach((item: { date: string; studentCode: string; cookieChange: number; count: number }) => {
       if (!grouped[item.date]) {
         grouped[item.date] = {};
       }
       grouped[item.date][item.studentCode] = {
         change: item.cookieChange,
-        count: item.count,
-        usedStreakFreeze: item.usedStreakFreeze
+        count: item.count
       };
     });
     return grouped;
@@ -2537,13 +2537,11 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
         price: parseInt(newItemPrice),
         category: newItemCategory,
         description: newItemDescription,
-        value: newItemDescription || newItemName,
-        ...(newItemMaxCount && { maxCount: parseInt(newItemMaxCount) })
+        value: newItemDescription || newItemName
       });
       setNewItemName('');
       setNewItemPrice('');
       setNewItemDescription('');
-      setNewItemMaxCount('');
       await loadShopItems();
       toast.success('상품이 추가되었습니다!');
     } catch (error) {
@@ -3794,15 +3792,15 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                                     {student.number}. {student.name}
                                   </td>
                                   {getLast14Days().map(date => {
-                                    const data = grassByDate[date]?.[student.code] || { change: 0, count: 0, usedStreakFreeze: false };
+                                    const data = grassByDate[date]?.[student.code] || { change: 0, count: 0 };
                                     totalChange += data.change;
                                     return (
                                       <td key={date} className="text-center py-2 px-1">
                                         <div
-                                          className={`w-6 h-6 mx-auto rounded ${getGrassColor(data.change, data.usedStreakFreeze)}`}
-                                          title={`${date}: ${data.usedStreakFreeze ? '❄️ 스트릭 프리즈' : `+${data.change} (${data.count}회)`}`}
+                                          className={`w-6 h-6 mx-auto rounded ${getGrassColor(data.change)}`}
+                                          title={`${date}: +${data.change} (${data.count}회)`}
                                         >
-                                          {data.change > 0 && !data.usedStreakFreeze && (
+                                          {data.change > 0 && (
                                             <span className="text-xs text-white font-bold leading-6">
                                               {data.change}
                                             </span>
@@ -3962,17 +3960,8 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                         + 추가
                       </Button>
                     </div>
-                    {newItemCategory === 'custom' && (
-                      <Input
-                        type="number"
-                        placeholder="최대 보유 개수 (스트릭 프리즈용, 예: 3)"
-                        value={newItemMaxCount}
-                        onChange={(e) => setNewItemMaxCount(e.target.value)}
-                        className="w-full"
-                      />
-                    )}
                   </div>
-                  <p className="text-xs text-gray-400">카테고리별 값: 이모지(😎), 이름효과(gradient-fire), 칭호색상(0~9), 애니메이션(pulse), 커스텀(streakFreeze)</p>
+                  <p className="text-xs text-gray-400">카테고리별 값: 이모지(😎), 이름효과(gradient-fire), 칭호색상(0~9), 애니메이션(pulse)</p>
 
                   {/* 기본 상품 일괄 등록 */}
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
@@ -6129,6 +6118,18 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
                         className="mt-1"
                       />
                     </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">다했니 API 키</label>
+                      <Input
+                        type="password"
+                        value={editDahandinApiKey}
+                        onChange={(e) => setEditDahandinApiKey(e.target.value)}
+                        placeholder="다했니 API 키를 입력하세요"
+                        className="mt-1 font-mono text-xs"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">api.dahandin.com에서 발급받은 키를 입력하세요. 비워두지 마세요.</p>
+                    </div>
                     <div className="flex gap-2 pt-2">
                       <Button onClick={saveProfile} disabled={isSavingProfile}>
                         {isSavingProfile ? '저장 중...' : '💾 저장'}
@@ -6662,12 +6663,11 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
 
                             const grassRecord = profileStudentGrass.find((g) => g.date === dateStr);
                             const cookieChange = grassRecord?.cookieChange || 0;
-                            const usedStreakFreeze = grassRecord?.usedStreakFreeze || false;
                             return (
                               <div
                                 key={dayIndex}
-                                className={`w-3 h-3 rounded-sm ${getGrassColor(cookieChange, usedStreakFreeze)}`}
-                                title={`${dateStr}: ${usedStreakFreeze ? '❄️ 스트릭 프리즈' : `+${cookieChange}쿠키`}`}
+                                className={`w-3 h-3 rounded-sm ${getGrassColor(cookieChange)}`}
+                                title={`${dateStr}: +${cookieChange}쿠키`}
                               />
                             );
                           })}

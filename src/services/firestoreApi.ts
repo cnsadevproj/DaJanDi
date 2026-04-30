@@ -80,9 +80,6 @@ export interface Student {
   // 소원 streak 관련
   wishStreak?: number;
   bestWishStreak?: number;
-  // 스트릭 프리즈 관련
-  streakFreezes?: number; // 보유 개수
-  activeStreakFreezes?: number; // 활성화된 개수
   lastWishDate?: Timestamp | null;
 }
 
@@ -141,7 +138,6 @@ export interface ShopItem {
   price: number;
   value: string;
   description: string;
-  maxCount?: number; // 스트릭 프리즈 전용: 최대 보유 개수
 }
 
 // 쿠키 상점 아이템 (실물 교환)
@@ -1006,11 +1002,6 @@ export async function addShopItem(
     value: item.value
   };
 
-  // maxCount가 있으면 추가 (스트릭 프리즈용)
-  if (item.maxCount !== undefined) {
-    itemData.maxCount = item.maxCount;
-  }
-
   await setDoc(itemRef, itemData);
 
   return itemCode;
@@ -1138,11 +1129,11 @@ export async function getGrassData(
   teacherId: string,
   classId: string,
   studentCode?: string
-): Promise<Array<{ date: string; studentCode: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }>> {
+): Promise<Array<{ date: string; studentCode: string; cookieChange: number; count: number }>> {
   const grassRef = collection(db, 'teachers', teacherId, 'classes', classId, 'grass');
   const snapshot = await getDocs(grassRef);
 
-  const grassData: Array<{ date: string; studentCode: string; cookieChange: number; count: number; usedStreakFreeze?: boolean }> = [];
+  const grassData: Array<{ date: string; studentCode: string; cookieChange: number; count: number }> = [];
 
   snapshot.docs.forEach(doc => {
     const date = doc.id;
@@ -1150,13 +1141,12 @@ export async function getGrassData(
 
     for (const [code, data] of Object.entries(records)) {
       if (!studentCode || code === studentCode) {
-        const record = data as { change: number; count: number; usedStreakFreeze?: boolean };
+        const record = data as { change: number; count: number };
         grassData.push({
           date,
           studentCode: code,
           cookieChange: record.change,
-          count: record.count,
-          usedStreakFreeze: record.usedStreakFreeze
+          count: record.count
         });
       }
     }
@@ -1436,8 +1426,6 @@ export async function refreshStudentCookies(
       // 4시간 제한 제거 - 쿠키가 증가하면 바로 기록
       if (cookieChange > 0 && !isFirstLoad) {
         await addGrassRecord(teacherId, classId, student.code, cookieChange);
-        // 스트릭 프리즈 자동 사용
-        await autoUseStreakFreezes(teacherId, classId, student.code);
       }
 
       updatedCount++;
@@ -2309,9 +2297,9 @@ export async function calculateStudentStreak(
     }
 
     // 날짜별 맵 생성 (빠른 조회를 위해)
-    const grassMap = new Map<string, { cookieChange: number; usedStreakFreeze?: boolean }>();
+    const grassMap = new Map<string, { cookieChange: number }>();
     grassData.forEach(data => {
-      grassMap.set(data.date, { cookieChange: data.cookieChange, usedStreakFreeze: data.usedStreakFreeze });
+      grassMap.set(data.date, { cookieChange: data.cookieChange });
     });
 
     // 오늘 제외, 어제부터 시작
@@ -2348,12 +2336,8 @@ export async function calculateStudentStreak(
           // 쿠키가 1개 이상이면 스트릭 증가
           streak++;
           checkDate.setDate(checkDate.getDate() - 1);
-        } else if (grassInfo.usedStreakFreeze) {
-          // 스트릭 프리즈는 연결만 유지 (카운트 안 함)
-          checkDate.setDate(checkDate.getDate() - 1);
-          continue;
         } else {
-          // 쿠키가 0이고 프리즈도 없으면 중단
+          // 쿠키가 0이면 중단
           break;
         }
       } else {
@@ -2369,181 +2353,3 @@ export async function calculateStudentStreak(
   }
 }
 
-// 스트릭 프리즈 구매
-export async function purchaseStreakFreeze(
-  teacherId: string,
-  studentCode: string,
-  price: number,
-  maxCount: number
-): Promise<{ success: boolean; message?: string }> {
-  try {
-    const studentRef = doc(db, 'teachers', teacherId, 'students', studentCode);
-    const studentSnap = await getDoc(studentRef);
-
-    if (!studentSnap.exists()) {
-      return { success: false, message: '학생 정보를 찾을 수 없습니다.' };
-    }
-
-    const student = studentSnap.data() as Student;
-    const currentJelly = student.jelly || 0;
-    const currentFreezes = student.streakFreezes || 0;
-
-    // 최대 보유 개수 확인
-    if (currentFreezes >= maxCount) {
-      return { success: false, message: `최대 ${maxCount}개까지만 보유할 수 있습니다.` };
-    }
-
-    // 캔디 확인
-    if (currentJelly < price) {
-      return { success: false, message: `캔디가 부족합니다. (필요: ${price}, 보유: ${currentJelly})` };
-    }
-
-    // 구매 처리
-    await updateDoc(studentRef, {
-      jelly: currentJelly - price,
-      streakFreezes: currentFreezes + 1
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Failed to purchase streak freeze:', error);
-    return { success: false, message: '구매에 실패했습니다.' };
-  }
-}
-
-// 스트릭 프리즈 활성화/비활성화
-export async function updateActiveStreakFreezes(
-  teacherId: string,
-  studentCode: string,
-  activeCount: number
-): Promise<{ success: boolean; message?: string }> {
-  try {
-    const studentRef = doc(db, 'teachers', teacherId, 'students', studentCode);
-    const studentSnap = await getDoc(studentRef);
-
-    if (!studentSnap.exists()) {
-      return { success: false, message: '학생 정보를 찾을 수 없습니다.' };
-    }
-
-    const student = studentSnap.data() as Student;
-    const currentFreezes = student.streakFreezes || 0;
-
-    // 보유 개수보다 많이 활성화할 수 없음
-    if (activeCount > currentFreezes) {
-      return { success: false, message: '보유한 개수보다 많이 활성화할 수 없습니다.' };
-    }
-
-    await updateDoc(studentRef, {
-      activeStreakFreezes: activeCount
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Failed to update active streak freezes:', error);
-    return { success: false, message: '활성화 변경에 실패했습니다.' };
-  }
-}
-
-// 스트릭 프리즈 자동 사용 (쿠키 새로고침 시 호출)
-export async function autoUseStreakFreezes(
-  teacherId: string,
-  classId: string,
-  studentCode: string
-): Promise<void> {
-  try {
-    // 학생 정보 조회
-    const studentRef = doc(db, 'teachers', teacherId, 'students', studentCode);
-    const studentSnap = await getDoc(studentRef);
-
-    if (!studentSnap.exists()) return;
-
-    const student = studentSnap.data() as Student;
-    const activeFreezes = student.activeStreakFreezes || 0;
-
-    if (activeFreezes === 0) return; // 활성화된 프리즈가 없으면 종료
-
-    // 잔디 데이터 조회
-    const grassData = await getGrassData(teacherId, classId, studentCode);
-    const grassMap = new Map<string, { cookieChange: number; usedStreakFreeze?: boolean }>();
-    grassData.forEach(data => {
-      grassMap.set(data.date, { cookieChange: data.cookieChange, usedStreakFreeze: data.usedStreakFreeze });
-    });
-
-    // 어제부터 역순으로 빈 날 확인
-    const today = new Date();
-    let checkDate = new Date(today);
-    checkDate.setDate(checkDate.getDate() - 1); // 어제
-
-    // 어제가 주말이면 금요일로 조정
-    const yesterdayDayOfWeek = checkDate.getDay();
-    if (yesterdayDayOfWeek === 0) {
-      checkDate.setDate(checkDate.getDate() - 2);
-    } else if (yesterdayDayOfWeek === 6) {
-      checkDate.setDate(checkDate.getDate() - 1);
-    }
-
-    let usedCount = 0;
-    const freezeDates: string[] = [];
-
-    // 최대 활성화된 프리즈 개수만큼 연속된 빈 날 채우기
-    for (let i = 0; i < 365 && usedCount < activeFreezes; i++) {
-      const dayOfWeek = checkDate.getDay();
-
-      // 주말은 건너뛰기
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        checkDate.setDate(checkDate.getDate() - 1);
-        continue;
-      }
-
-      const dateStr = getKoreanDateString(checkDate);
-      const grassInfo = grassMap.get(dateStr);
-
-      if (!grassInfo || (grassInfo.cookieChange === 0 && !grassInfo.usedStreakFreeze)) {
-        // 빈 날 발견 → 스트릭 프리즈 사용
-        freezeDates.push(dateStr);
-        usedCount++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        // 잔디가 있는 날이면 중단
-        break;
-      }
-    }
-
-    if (usedCount === 0) return; // 사용할 필요 없으면 종료
-
-    // 잔디 데이터에 스트릭 프리즈 기록
-    for (const dateStr of freezeDates) {
-      const grassRef = doc(db, 'teachers', teacherId, 'classes', classId, 'grass', dateStr);
-      const grassSnap = await getDoc(grassRef);
-
-      if (grassSnap.exists()) {
-        const records = grassSnap.data().records || {};
-        await updateDoc(grassRef, {
-          [`records.${studentCode}.usedStreakFreeze`]: true
-        });
-      } else {
-        await setDoc(grassRef, {
-          date: dateStr,
-          records: {
-            [studentCode]: {
-              change: 0,
-              count: 0,
-              usedStreakFreeze: true
-            }
-          }
-        }, { merge: true });  // merge 옵션으로 기존 데이터 보존
-      }
-    }
-
-    // 학생의 스트릭 프리즈 개수 차감
-    const newFreezes = Math.max(0, (student.streakFreezes || 0) - usedCount);
-    const newActiveFreezes = Math.max(0, activeFreezes - usedCount);
-
-    await updateDoc(studentRef, {
-      streakFreezes: newFreezes,
-      activeStreakFreezes: newActiveFreezes
-    });
-  } catch (error) {
-    console.error('Failed to auto use streak freezes:', error);
-  }
-}
