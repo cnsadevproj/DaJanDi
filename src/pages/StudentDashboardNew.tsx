@@ -742,6 +742,13 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
     return category;
   };
 
+  // 스트릭 프리즈 아이템 식별 (제거된 기능, 잔존 데이터 숨김용)
+  const isStreakFreezeItem = (item: ShopItem): boolean => {
+    const codeMatch = /streak|freeze/i.test(item.code);
+    const nameMatch = /스트릭|프리즈/.test(item.name);
+    return codeMatch || nameMatch;
+  };
+
   // 상점 로드 (Firebase에 없으면 기본 아이템 사용)
   const loadShop = async () => {
     // teacherId 없어도 기본 상품 표시
@@ -755,11 +762,12 @@ export function StudentDashboardNew({ onLogout }: StudentDashboardNewProps) {
       const items = await getTeacherShopItems(studentTeacherId);
       // Firebase에 상품이 없으면 기본 상품 목록 사용
       if (items.length > 0) {
-        // 카테고리 정규화 적용
-        const normalizedItems = items.map(item => ({
-          ...item,
-          category: normalizeCategory(item.category) as typeof item.category
-        }));
+        const normalizedItems = items
+          .filter(item => !isStreakFreezeItem(item))
+          .map(item => ({
+            ...item,
+            category: normalizeCategory(item.category) as typeof item.category
+          }));
         setShopItems(normalizedItems);
       } else {
         setShopItems(ALL_SHOP_ITEMS);
