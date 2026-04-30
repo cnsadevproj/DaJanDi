@@ -189,24 +189,16 @@ Unattacked team's defense cookies → 50% penalty
 
 ### Branch Policy & Workflow
 
-**IMPORTANT: The `main` branch is protected.** All changes must go through Pull Requests.
+`main` 브랜치 직접 커밋/푸시 가능. main 푸시 시 GitHub Actions가 자동 배포.
 
 **Development Workflow:**
-1. Make changes on the `sdk.edit` branch (or create feature branches from it)
-2. Before starting work, **always sync `sdk.edit` with `main`**:
-   ```bash
-   git checkout sdk.edit
-   git pull origin main
-   ```
-3. If `main` is ahead of `sdk.edit`, sync first and summarize the changes from main
-4. Create a PR from `sdk.edit` (or feature branch) to `main`
-5. After PR merge, GitHub Actions automatically deploys to Firebase
+1. main에서 최신 상태 동기화: `git checkout main && git pull origin main`
+2. 변경사항을 main에 직접 커밋
+3. `git push origin main` → GitHub Actions가 Firebase 자동 배포
 
-**Branch Naming:**
-- Development: `sdk.edit`
-- Features: `feat/<name>`
-- Fixes: `fix/<name>`
-- Other developers: `<name>/feature` (e.g., `soojeong/feature`)
+**Branch Naming (필요 시):**
+- 큰 변경/실험: `feat/<name>`, `fix/<name>` 같은 feature 브랜치 생성 후 PR
+- 그 외 일반 작업은 main 직접 작업
 
 ### Style Rules
 - Korean UI text
