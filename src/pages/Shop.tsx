@@ -65,6 +65,11 @@ export function Shop({ onBack }: ShopProps) {
     return category;
   };
 
+  // 스트릭 프리즈 아이템 식별 (제거된 기능, 잔존 데이터 숨김용)
+  const isStreakFreezeItem = (item: ShopItem): boolean => {
+    return /streak|freeze/i.test(item.code) || /스트릭|프리즈/.test(item.name);
+  };
+
   // 데이터 로드
   useEffect(() => {
     const loadData = async () => {
@@ -85,11 +90,12 @@ export function Shop({ onBack }: ShopProps) {
         setStudent(studentData);
         // Firebase에 상품이 없으면 기본 상품 목록 사용
         if (items.length > 0) {
-          // 카테고리 정규화 적용
-          const normalizedItems = items.map(item => ({
-            ...item,
-            category: normalizeCategory(item.category) as typeof item.category
-          }));
+          const normalizedItems = items
+            .filter(item => !isStreakFreezeItem(item))
+            .map(item => ({
+              ...item,
+              category: normalizeCategory(item.category) as typeof item.category
+            }));
           setShopItems(normalizedItems);
         } else {
           setShopItems(ALL_SHOP_ITEMS);
